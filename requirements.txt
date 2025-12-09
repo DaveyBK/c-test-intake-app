@@ -1,0 +1,7 @@
+# 10-Minute Reading App (V1) - Dependencies
+# Python 3.8+ required
+
+# Document parsing (.docx support)
+python-docx>=0.8.11
+
+# Note: tkinter and sqlite3 are included in Python standard library

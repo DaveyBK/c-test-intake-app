@@ -1,0 +1,41 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local configuration
+config.py
+.env
+*.env
+
+# Databases / Data files
+*.db
+*.sqlite
+*.sqlite3
+data/
+recordings/
+exports/
+logs/
+reports/
+
+# User content folders (may contain student work)
+inbox/
+generated/
+
+# Build artefacts
+dist/
+build/
+*.spec
+*.exe
+*.dll
+*.so
+
+# OS junk
+Thumbs.db
+.DS_Store
