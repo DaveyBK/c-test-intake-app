@@ -8,10 +8,10 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Generator
+from typing import List, Optional, Generator, Dict
 
 from config import DB_PATH
-from models import Homework, GeneratedHomework
+from models import Homework, GeneratedHomework, CTestItem
 
 
 # =============================================================================
@@ -50,6 +50,27 @@ CREATE TABLE IF NOT EXISTS generated_homeworks (
 CREATE TABLE IF NOT EXISTS processed_files (
     file_path TEXT PRIMARY KEY,
     processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- C-test items for detailed grading
+CREATE TABLE IF NOT EXISTS c_test_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    homework_id INTEGER NOT NULL,
+    item_number INTEGER NOT NULL,
+    correct_word TEXT NOT NULL,
+    student_answer TEXT,
+    is_correct BOOLEAN,
+    FOREIGN KEY (homework_id) REFERENCES homeworks(id)
+);
+
+-- C-test templates/versions
+CREATE TABLE IF NOT EXISTS c_test_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version TEXT NOT NULL UNIQUE,
+    text_with_fragments TEXT NOT NULL,
+    answer_key TEXT NOT NULL,
+    num_items INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -234,6 +255,114 @@ class Database:
                  gen.reading_text, gen.writing_prompts)
             )
             return cursor.lastrowid
+    
+    # =========================================================================
+    # C-TEST OPERATIONS
+    # =========================================================================
+    
+    def add_c_test_template(self, version: str, text: str, answer_key: str, num_items: int) -> int:
+        """
+        Add a C-test template.
+        
+        Args:
+            version: Template version identifier (e.g., "A", "B")
+            text: Text with fragments (e.g., "The wea____ was col____")
+            answer_key: JSON string of answer key
+            num_items: Number of items in the test
+        
+        Returns:
+            Template ID
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """INSERT INTO c_test_templates
+                   (version, text_with_fragments, answer_key, num_items)
+                   VALUES (?, ?, ?, ?)""",
+                (version, text, answer_key, num_items)
+            )
+            return cursor.lastrowid
+    
+    def get_c_test_template(self, version: str) -> Optional[Dict]:
+        """
+        Get a C-test template by version.
+        
+        Args:
+            version: Template version identifier
+        
+        Returns:
+            Dictionary with template data or None
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM c_test_templates WHERE version = ?",
+                (version,)
+            ).fetchone()
+            if row:
+                return {
+                    "id": row["id"],
+                    "version": row["version"],
+                    "text_with_fragments": row["text_with_fragments"],
+                    "answer_key": row["answer_key"],
+                    "num_items": row["num_items"],
+                    "created_at": row["created_at"],
+                }
+            return None
+    
+    def save_c_test_items(self, homework_id: int, items: List[CTestItem]) -> None:
+        """
+        Save C-test items for a homework.
+        
+        Args:
+            homework_id: The homework ID
+            items: List of CTestItem objects
+        """
+        with self._connect() as conn:
+            # Delete existing items for this homework
+            conn.execute(
+                "DELETE FROM c_test_items WHERE homework_id = ?",
+                (homework_id,)
+            )
+            
+            # Insert new items
+            for item in items:
+                conn.execute(
+                    """INSERT INTO c_test_items
+                       (homework_id, item_number, correct_word, student_answer, is_correct)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (homework_id, item.item_number, item.original_word,
+                     item.student_answer, item.is_correct)
+                )
+    
+    def get_c_test_items(self, homework_id: int) -> List[CTestItem]:
+        """
+        Get C-test items for a homework.
+        
+        Args:
+            homework_id: The homework ID
+        
+        Returns:
+            List of CTestItem objects
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM c_test_items
+                   WHERE homework_id = ?
+                   ORDER BY item_number""",
+                (homework_id,)
+            ).fetchall()
+            
+            items = []
+            for row in rows:
+                item = CTestItem(
+                    item_number=row["item_number"],
+                    original_word=row["correct_word"],
+                    fragment_shown="",
+                    student_answer=row["student_answer"] or "",
+                    is_correct=bool(row["is_correct"])
+                )
+                items.append(item)
+            
+            return items
 
 
 # =============================================================================

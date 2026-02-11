@@ -1,12 +1,12 @@
 """
-Data models for 10-Minute Reading App (V1).
+Data models for C-test Intake App.
 
-Simple dataclasses for homework submissions and scores.
+Dataclasses for homework submissions, scores, and C-test specific data.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 
 @dataclass
@@ -50,3 +50,24 @@ class GeneratedHomework:
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()
+
+
+@dataclass
+class CTestItem:
+    """A single C-test completion item."""
+    item_number: int
+    original_word: str
+    fragment_shown: str
+    student_answer: str
+    is_correct: bool = False
+
+
+@dataclass
+class CTestSubmission:
+    """A complete C-test submission."""
+    homework_id: int
+    test_version: str
+    items: List[CTestItem]
+    num_correct: int
+    percentage: float
+    score: int
