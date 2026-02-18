@@ -11,22 +11,26 @@ from typing import Optional, List
 
 @dataclass
 class Student:
-    """A student in the system."""
-    id: Optional[int] = None
+    """A student in the system (matches inventory.db schema)."""
+    student_id: str = ""  # TEXT primary key (e.g., '20231107')
     first_name: str = ""
     last_name: str = ""
-    email: str = ""
-    current_level: str = ""
-    created_at: Optional[datetime] = None
-    
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now()
+    level: str = ""  # e.g., 'SM4', 'Phonics 2'
+    status: str = "active"  # 'active' or 'archived'
+    qr_code: str = ""
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    archived_at: Optional[str] = None
     
     @property
     def full_name(self) -> str:
         """Get full name."""
         return f"{self.first_name} {self.last_name}".strip()
+    
+    @property
+    def id(self) -> str:
+        """Alias for student_id for compatibility."""
+        return self.student_id
 
 
 @dataclass
@@ -43,7 +47,7 @@ class CTestItem:
 class CTestResult:
     """A complete C-test result for a student."""
     id: Optional[int] = None
-    student_id: int = 0
+    student_id: str = ""  # TEXT to match inventory.db schema
     test_version: str = ""
     test_date: Optional[datetime] = None
     num_items: int = 0

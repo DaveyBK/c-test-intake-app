@@ -22,17 +22,17 @@ SCHEMA = """
 -- C-test results (local storage)
 CREATE TABLE IF NOT EXISTS c_test_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id INTEGER NOT NULL,
+    student_id TEXT NOT NULL,
     test_version TEXT NOT NULL,
-    test_date DATETIME NOT NULL,
+    test_date TEXT NOT NULL,
     num_items INTEGER NOT NULL,
     num_correct INTEGER NOT NULL,
     percentage REAL NOT NULL,
     score INTEGER NOT NULL,
     placement_level TEXT,
-    completed BOOLEAN DEFAULT 1,
-    synced_to_inventory BOOLEAN DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    completed INTEGER DEFAULT 1,
+    synced_to_inventory INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- C-test result items (item-level details)
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS c_test_result_items (
     item_number INTEGER NOT NULL,
     correct_word TEXT NOT NULL,
     student_answer TEXT,
-    is_correct BOOLEAN NOT NULL,
+    is_correct INTEGER NOT NULL,
     FOREIGN KEY (result_id) REFERENCES c_test_results(id) ON DELETE CASCADE
 );
 
@@ -53,17 +53,18 @@ CREATE TABLE IF NOT EXISTS c_test_templates (
     text_with_fragments TEXT NOT NULL,
     answer_key TEXT NOT NULL,
     num_items INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Students cache (local copy from inventory.db)
 CREATE TABLE IF NOT EXISTS students_cache (
-    id INTEGER PRIMARY KEY,
+    student_id TEXT PRIMARY KEY,
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
-    email TEXT,
-    current_level TEXT,
-    last_synced DATETIME DEFAULT CURRENT_TIMESTAMP
+    level TEXT,
+    status TEXT DEFAULT 'active',
+    qr_code TEXT,
+    last_synced TEXT DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -301,26 +302,28 @@ class Database:
         with self._connect() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO students_cache
-                   (id, first_name, last_name, email, current_level, last_synced)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (student.id, student.first_name, student.last_name,
-                 student.email, student.current_level, datetime.now().isoformat())
+                   (student_id, first_name, last_name, level, status, qr_code, last_synced)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (student.student_id, student.first_name, student.last_name,
+                 student.level, student.status, student.qr_code, 
+                 datetime.now().isoformat())
             )
     
-    def get_cached_student(self, student_id: int) -> Optional[Student]:
+    def get_cached_student(self, student_id: str) -> Optional[Student]:
         """Get a cached student."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM students_cache WHERE id = ?", (student_id,)
+                "SELECT * FROM students_cache WHERE student_id = ?", (student_id,)
             ).fetchone()
             
             if row:
                 return Student(
-                    id=row["id"],
+                    student_id=row["student_id"],
                     first_name=row["first_name"],
                     last_name=row["last_name"],
-                    email=row["email"] or "",
-                    current_level=row["current_level"] or ""
+                    level=row["level"] or "",
+                    status=row["status"] or "active",
+                    qr_code=row["qr_code"] or ""
                 )
             return None
     
@@ -333,11 +336,12 @@ class Database:
             
             return [
                 Student(
-                    id=r["id"],
+                    student_id=r["student_id"],
                     first_name=r["first_name"],
                     last_name=r["last_name"],
-                    email=r["email"] or "",
-                    current_level=r["current_level"] or ""
+                    level=r["level"] or "",
+                    status=r["status"] or "active",
+                    qr_code=r["qr_code"] or ""
                 )
                 for r in rows
             ]

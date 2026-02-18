@@ -3,6 +3,11 @@ Inventory database integration for C-Test Intake App.
 
 This module provides functions to read from and write to the shared
 inventory.db database used by the Zone B teacher assistant portal.
+
+Schema matches the actual inventory.db structure:
+- students: student_id (TEXT), first_name, last_name, level, status
+- class_def: class_id, class_name, level
+- class_roster: links students to classes
 """
 
 import sqlite3
@@ -11,6 +16,45 @@ from pathlib import Path
 from typing import List, Optional, Generator
 
 from models import Student, CTestResult
+
+
+# SQL to create C-Test results table in inventory.db
+CREATE_C_TEST_TABLES = """
+-- C-Test results table (main test results)
+CREATE TABLE IF NOT EXISTS c_test_results (
+    result_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id      TEXT NOT NULL,
+    test_version    TEXT NOT NULL,
+    test_date       TEXT NOT NULL,
+    num_items       INTEGER NOT NULL,
+    num_correct     INTEGER NOT NULL,
+    percentage      REAL NOT NULL,
+    score           INTEGER NOT NULL,
+    placement_level TEXT,
+    completed       INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+);
+
+-- C-Test result items (detailed item-level results)
+CREATE TABLE IF NOT EXISTS c_test_result_items (
+    item_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    result_id       INTEGER NOT NULL,
+    item_number     INTEGER NOT NULL,
+    correct_word    TEXT NOT NULL,
+    student_answer  TEXT,
+    is_correct      INTEGER NOT NULL,
+    FOREIGN KEY (result_id) REFERENCES c_test_results(result_id) ON DELETE CASCADE
+);
+
+-- Index for faster student lookups
+CREATE INDEX IF NOT EXISTS idx_c_test_student 
+ON c_test_results(student_id);
+
+-- Index for date-based queries
+CREATE INDEX IF NOT EXISTS idx_c_test_date 
+ON c_test_results(test_date);
+"""
 
 
 class InventoryDatabase:
@@ -60,13 +104,35 @@ class InventoryDatabase:
         """Check if inventory database is available."""
         return self._available
     
+    def initialize_c_test_tables(self) -> bool:
+        """
+        Create C-Test tables in inventory.db if they don't exist.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_available():
+            return False
+        
+        try:
+            with self._connect() as conn:
+                conn.executescript(CREATE_C_TEST_TABLES)
+            print("✓ C-Test tables initialized in inventory.db")
+            return True
+        except Exception as e:
+            print(f"✗ Failed to initialize C-Test tables: {e}")
+            return False
+    
     # =========================================================================
     # STUDENT OPERATIONS
     # =========================================================================
     
-    def get_students(self) -> List[Student]:
+    def get_students(self, status: str = 'active') -> List[Student]:
         """
-        Get all students from inventory database.
+        Get students from inventory database.
+        
+        Args:
+            status: Filter by status ('active', 'archived', or None for all)
         
         Returns:
             List of Student objects
@@ -75,30 +141,44 @@ class InventoryDatabase:
             return []
         
         with self._connect() as conn:
-            # TODO: Update this query once you provide the actual schema
-            rows = conn.execute(
-                """SELECT student_id, first_name, last_name, email, current_level
-                   FROM students 
-                   ORDER BY last_name, first_name"""
-            ).fetchall()
+            if status:
+                rows = conn.execute(
+                    """SELECT student_id, first_name, last_name, level, status, qr_code,
+                              created_at, updated_at, archived_at
+                       FROM students 
+                       WHERE status = ?
+                       ORDER BY last_name, first_name""",
+                    (status,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT student_id, first_name, last_name, level, status, qr_code,
+                              created_at, updated_at, archived_at
+                       FROM students 
+                       ORDER BY last_name, first_name"""
+                ).fetchall()
             
             return [
                 Student(
-                    id=row["student_id"],
+                    student_id=row["student_id"],
                     first_name=row["first_name"],
-                    last_name=row["last_name"],
-                    email=row.get("email", ""),
-                    current_level=row.get("current_level", "")
+                    last_name=row["last_name"] or "",
+                    level=row["level"] or "",
+                    status=row["status"] or "active",
+                    qr_code=row["qr_code"] or "",
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                    archived_at=row["archived_at"]
                 )
                 for row in rows
             ]
     
-    def get_student(self, student_id: int) -> Optional[Student]:
+    def get_student(self, student_id: str) -> Optional[Student]:
         """
         Get a specific student by ID.
         
         Args:
-            student_id: Student ID
+            student_id: Student ID (TEXT, e.g., '20231107')
             
         Returns:
             Student object or None
@@ -107,9 +187,9 @@ class InventoryDatabase:
             return None
         
         with self._connect() as conn:
-            # TODO: Update this query once you provide the actual schema
             row = conn.execute(
-                """SELECT student_id, first_name, last_name, email, current_level
+                """SELECT student_id, first_name, last_name, level, status, qr_code,
+                          created_at, updated_at, archived_at
                    FROM students 
                    WHERE student_id = ?""",
                 (student_id,)
@@ -117,13 +197,55 @@ class InventoryDatabase:
             
             if row:
                 return Student(
-                    id=row["student_id"],
+                    student_id=row["student_id"],
                     first_name=row["first_name"],
-                    last_name=row["last_name"],
-                    email=row.get("email", ""),
-                    current_level=row.get("current_level", "")
+                    last_name=row["last_name"] or "",
+                    level=row["level"] or "",
+                    status=row["status"] or "active",
+                    qr_code=row["qr_code"] or "",
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                    archived_at=row["archived_at"]
                 )
             return None
+    
+    def get_students_by_level(self, level: str) -> List[Student]:
+        """
+        Get all students at a specific level.
+        
+        Args:
+            level: Level code (e.g., 'SM4', 'Phonics 2')
+            
+        Returns:
+            List of Student objects
+        """
+        if not self.is_available():
+            return []
+        
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT student_id, first_name, last_name, level, status, qr_code,
+                          created_at, updated_at, archived_at
+                   FROM students 
+                   WHERE level = ? AND status = 'active'
+                   ORDER BY last_name, first_name""",
+                (level,)
+            ).fetchall()
+            
+            return [
+                Student(
+                    student_id=row["student_id"],
+                    first_name=row["first_name"],
+                    last_name=row["last_name"] or "",
+                    level=row["level"] or "",
+                    status=row["status"] or "active",
+                    qr_code=row["qr_code"] or "",
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                    archived_at=row["archived_at"]
+                )
+                for row in rows
+            ]
     
     # =========================================================================
     # C-TEST RESULT OPERATIONS
@@ -143,43 +265,37 @@ class InventoryDatabase:
             raise ConnectionError("Cannot save to inventory.db - not available")
         
         with self._connect() as conn:
-            # TODO: Update this schema once you provide the actual table structure
-            # This is a placeholder based on typical assessment tracking
-            
+            # Insert main result
             cursor = conn.execute(
                 """INSERT INTO c_test_results
                    (student_id, test_version, test_date, num_items, num_correct,
                     percentage, score, placement_level, completed)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (result.student_id, result.test_version,
-                 result.test_date.isoformat() if result.test_date else None,
+                 result.test_date.strftime('%Y-%m-%d %H:%M:%S') if result.test_date else None,
                  result.num_items, result.num_correct, result.percentage,
-                 result.score, result.placement_level, result.completed)
+                 result.score, result.placement_level, 1 if result.completed else 0)
             )
             result_id = cursor.lastrowid
             
-            # Save item-level details if table exists
-            try:
-                for item in result.items:
-                    conn.execute(
-                        """INSERT INTO c_test_result_items
-                           (result_id, item_number, correct_word, student_answer, is_correct)
-                           VALUES (?, ?, ?, ?, ?)""",
-                        (result_id, item.item_number, item.original_word,
-                         item.student_answer, item.is_correct)
-                    )
-            except sqlite3.OperationalError:
-                # Table doesn't exist - that's okay, just save summary
-                pass
+            # Save item-level details
+            for item in result.items:
+                conn.execute(
+                    """INSERT INTO c_test_result_items
+                       (result_id, item_number, correct_word, student_answer, is_correct)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (result_id, item.item_number, item.original_word,
+                     item.student_answer, 1 if item.is_correct else 0)
+                )
             
             return result_id
     
-    def get_student_c_test_history(self, student_id: int) -> List[dict]:
+    def get_student_c_test_history(self, student_id: str) -> List[dict]:
         """
         Get C-test history for a student from inventory.db.
         
         Args:
-            student_id: Student ID
+            student_id: Student ID (TEXT)
             
         Returns:
             List of test result dictionaries
@@ -187,10 +303,11 @@ class InventoryDatabase:
         if not self.is_available():
             return []
         
-        with self._connect() as conn:
-            try:
+        try:
+            with self._connect() as conn:
                 rows = conn.execute(
-                    """SELECT test_version, test_date, score, placement_level
+                    """SELECT test_version, test_date, score, placement_level, 
+                              num_correct, num_items, percentage
                        FROM c_test_results
                        WHERE student_id = ?
                        ORDER BY test_date DESC""",
@@ -202,13 +319,29 @@ class InventoryDatabase:
                         "version": row["test_version"],
                         "date": row["test_date"],
                         "score": row["score"],
-                        "level": row.get("placement_level", "")
+                        "level": row["placement_level"] or "",
+                        "num_correct": row["num_correct"],
+                        "num_items": row["num_items"],
+                        "percentage": row["percentage"]
                     }
                     for row in rows
                 ]
-            except sqlite3.OperationalError:
-                # Table doesn't exist yet
-                return []
+        except sqlite3.OperationalError:
+            # Table doesn't exist yet
+            return []
+    
+    def get_latest_c_test_result(self, student_id: str) -> Optional[dict]:
+        """
+        Get the most recent C-test result for a student.
+        
+        Args:
+            student_id: Student ID (TEXT)
+            
+        Returns:
+            Dictionary with test result or None
+        """
+        history = self.get_student_c_test_history(student_id)
+        return history[0] if history else None
 
 
 # =============================================================================
