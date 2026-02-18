@@ -39,3 +39,6 @@ build/
 # OS junk
 Thumbs.db
 .DS_Store
+
+# Archived old files
+*_old.py

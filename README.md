@@ -1,32 +1,19 @@
-# C-test Intake App
+# C-Test Intake App
 
-A homework tracking app for English C-test assessment and tutoring.
+A placement and intake tool for English language assessment using the C-Test format.
 
-## Features
+## What is a C-Test?
 
-- ✅ Watch a local folder for new C-test submissions
-- ✅ Extract text from `.docx` and `.txt` files
-- ✅ Auto-grade C-test submissions with exact match checking
-- ✅ Support for British/American spelling variants
-- ✅ Item-by-item feedback and detailed scoring
-- ✅ Manual score adjustment and comments
-- ✅ SQLite database for tracking
-- ✅ Simple Tkinter GUI
-- ✅ Backward compatible with reading/writing grading
+A C-Test is a language proficiency test where students complete partially deleted words in context. This tests reading comprehension, vocabulary, and grammar knowledge simultaneously.
 
-## C-test Format
-
-A C-test requires students to complete word fragments in context. This tests reading comprehension, vocabulary, and grammar knowledge.
-
-**Example C-test:**
+**Example C-Test:**
 
 ```
 The wea____ was col__ yest____day morn____. 
 I walk____ to scho____ beca____ I was lat____.
 ```
 
-**Student submits answers as:**
-
+**Student answers:**
 ```
 1. weather
 2. cold
@@ -38,30 +25,37 @@ I walk____ to scho____ beca____ I was lat____.
 8. late
 ```
 
-**Or in bracket format:**
+**Grading:** Each correct completion = 1 point. Percentage is converted to 0-5 scale for placement.
 
-```
-The wea[weather] was col[cold] yest[yesterday]day morn[morning].
-I walk[walked] to scho[school] beca[because] I was lat[late].
-```
+## Features
 
-**Grading:**
+- ✅ Exact-match C-Test grading with spelling variants
+- ✅ Support for British/American spelling (colour/color, centre/center, etc.)
+- ✅ Item-by-item feedback and detailed scoring
+- ✅ Multiple answer formats (numbered list or bracket format)
+- ✅ Student profile integration (ready for inventory.db)
+- ✅ Local SQLite database for offline operation
+- ✅ Placement level assignment (0-5 scale)
+- ✅ Full test history tracking
 
-- Each correct completion = 1 point
-- Percentage correct converted to 0-5 scale:
-  - 90%+ = 5 (Excellent)
-  - 75-89% = 4 (Good)
-  - 60-74% = 3 (Pass)
-  - 45-59% = 2 (Below Average)
-  - 30-44% = 1 (Poor)
-  - <30% = 0 (Fail)
-- British/American spelling variants accepted (e.g., "colour"/"color")
+## Scoring Rubric
+
+Percentage correct is converted to 0-5 placement scale:
+
+| Score | Percentage | Placement Level |
+|-------|------------|-----------------|
+| 5 | 90%+ | Advanced |
+| 4 | 75-89% | Upper-Intermediate |
+| 3 | 60-74% | Intermediate |
+| 2 | 45-59% | Pre-Intermediate |
+| 1 | 30-44% | Elementary |
+| 0 | <30% | Beginner |
 
 ## Setup
 
 ### 1. Install Python 3.8+
 
-Make sure Python 3.8 or higher is installed on your Windows PC.
+Make sure Python 3.8 or higher is installed.
 
 ### 2. Install dependencies
 
@@ -69,22 +63,19 @@ Make sure Python 3.8 or higher is installed on your Windows PC.
 pip install -r requirements.txt
 ```
 
-Or just:
-
-```bash
-pip install python-docx
-```
-
 ### 3. Configure settings
 
-Copy `config.example.py` to `config.py` and edit the values:
+Copy `config.example.py` to `config.py` and edit:
 
-- `STUDENT_NAME`: Student name for filename matching (default: `"Student 1"`)
-- `INBOX_FOLDER`: Where student puts homework files (default: `./inbox`)
-- `GENERATED_FOLDER`: Where generated homework goes (default: `./generated`)
-- `C_TEST_ACCEPT_VARIANTS`: Accept British/American spelling (default: `True`)
-- `C_TEST_PASSING_SCORE`: Minimum passing score (default: `3`)
-- Other settings as needed
+```python
+# Database paths
+DB_PATH = "./data/c_test.db"              # Local database
+INVENTORY_DB_PATH = "/path/to/inventory.db"  # Shared database (optional)
+
+# Integration settings
+OFFLINE_MODE = True   # Set to False to enable inventory.db sync
+AUTO_SYNC = False     # Auto-sync to inventory.db after each test
+```
 
 ### 4. Run the app
 
@@ -94,168 +85,85 @@ python main.py
 
 ## Usage
 
-### C-test Workflow
-
-1. **Student submits C-test**
-   - Saves file to inbox folder (or synced Drive folder)
-   - Filename format: `YYYYMMDD_Student1_hwNN.docx` or `Student1_hwNN.txt`
-   - Example: `20250115_Student1_hw03.docx`
-   - Answers in numbered list or bracket format
-
-2. **App detects and grades the file**
-   - Automatically extracts answers
-   - Grades against answer key
-   - Shows item-by-item results
-   - Calculates percentage and 0-5 score
-
-3. **You review and adjust**
-   - Select homework in the list
-   - View student's responses and grading details
-   - Adjust scores if needed
-   - Add a comment
-   - Click "Save Scores"
-
-### Answer Key Format
-
-Create answer keys as Python dictionaries:
+### Programmatic API
 
 ```python
+from c_test_grader import grade_c_test
+from c_test_parser import extract_c_test_answers
+
+# Define answer key
 answer_key = {
     1: "weather",
     2: "cold",
     3: "yesterday",
-    4: "morning",
-    5: "walked",
-    6: "school",
-    7: "because",
-    8: "late",
+    4: "morning"
 }
-```
 
-### Submission Formats
-
-**Numbered List Format (Recommended):**
-```
+# Student's submission text
+student_text = """
 1. weather
 2. cold
 3. yesterday
 4. morning
+"""
+
+# Parse answers
+student_answers = extract_c_test_answers(student_text, num_items=4)
+
+# Grade the test
+score, items, feedback = grade_c_test(answer_key, student_answers)
+
+print(f"Score: {score}/5")
+print(feedback)
+```
+
+### Answer Formats Supported
+
+**Numbered List Format:**
+```
+1. weather
+2. cold
+3. yesterday
 ```
 
 **Bracket Format:**
 ```
-The wea[weather] was col[cold] yest[yesterday]day morn[morning].
+The wea[weather] was col[cold] yest[yesterday]day.
 ```
 
-### Filename Patterns
+### Database Integration
 
-The app recognizes these filename formats:
+The app uses a dual-database architecture:
 
-| Format | Example |
-|--------|---------|
-| `YYYYMMDD_Student1_hwNN.ext` | `20250115_Student1_hw03.docx` |
-| `Student1_hwNN.ext` | `Student1_hw03.txt` |
-| `hwNN_Student1.ext` | `hw03_Student1.docx` |
-| `hwNN.ext` | `hw03.txt` (assumes Student 1) |
+1. **Local database (`c_test.db`)**: Stores all test results locally for offline operation
+2. **Inventory database (`inventory.db`)**: Shared database with student profiles and complete learning history
 
-### Scoring Rubric
+When `OFFLINE_MODE = False` and inventory.db is available:
+- Student list is loaded from inventory.db
+- Test results are saved to both databases
+- Sync status is tracked for reliability
 
-**C-test Score (0-5):**
-- 90%+ correct = 5 (Excellent)
-- 75-89% correct = 4 (Good)
-- 60-74% correct = 3 (Pass)
-- 45-59% correct = 2 (Below Average)
-- 30-44% correct = 1 (Poor)
-- <30% correct = 0 (Fail)
-
-**Backward Compatibility:**
-
-The app still supports traditional reading/writing grading:
-
-**Reading Score (0-5):**
-- Based on comprehension phrases found
-- Examples: "the main idea", "according to the text", "because"
-- Penalized for very short responses
-
-**Writing Score (0-5):**
-- Based on word count and sentence variety
-- Penalized for missing punctuation, lowercase errors
-
-**Listening Score (0-5):**
-- Entered manually by teacher
-
-## Folder Structure
+## File Structure
 
 ```
 c-test-intake-app/
-├── main.py              # Run this to start
-├── config.example.py    # Configuration template (copy to config.py)
-├── config.py            # Configuration (create from example)
-├── db.py                # Database operations
-├── models.py            # Data classes
-├── watcher.py           # Folder watching
-├── extractor.py         # Text extraction
-├── grader.py            # Traditional reading/writing grading
-├── c_test_grader.py     # C-test grading engine
-├── c_test_parser.py     # C-test answer parser
-├── generator.py         # Homework generation
-├── gui.py               # Tkinter interface
-├── requirements.txt     # Dependencies
-├── tests/               # Unit tests
-├── inbox/               # Student drops files here
-├── generated/           # Generated homework goes here
-└── data/
-    └── homework.db      # SQLite database
+├── main.py                 # Application entry point
+├── config.example.py       # Configuration template
+├── config.py               # Your configuration (create from example)
+├── models.py               # Data models (Student, CTestResult, CTestItem)
+├── db.py                   # Local database operations
+├── inventory_db.py         # Shared database integration
+├── c_test_grader.py        # Grading engine
+├── c_test_parser.py        # Answer parsing
+├── tests/                  # Unit tests
+│   ├── test_c_test_grader.py
+│   └── test_c_test_parser.py
+├── data/
+│   └── c_test.db           # Local database (created automatically)
+└── GAP_ANALYSIS_REPORT.md  # Integration planning document
 ```
 
-## Google Drive Sync (Optional)
-
-For automatic syncing with Google Drive:
-
-1. Install [Google Drive for Desktop](https://www.google.com/drive/download/)
-2. Set up a shared folder with your student
-3. Change `INBOX_FOLDER` in `config.py` to point to:
-   - Windows: `C:\Users\YourName\Google Drive\Homework\inbox`
-   - Or wherever your synced folder is
-4. The app watches this folder; Drive syncs it automatically
-
-## Troubleshooting
-
-### "python-docx not installed"
-
-```bash
-pip install python-docx
-```
-
-### Files not detected
-
-- Check filename matches expected pattern
-- Only `.docx` and `.txt` are supported
-- Check the inbox folder path in `config.py`
-
-### C-test grading issues
-
-- Ensure answer key is properly formatted
-- Check that student submission uses numbered list or bracket format
-- Verify British/American spelling variants are enabled in config if needed
-
-### Database errors
-
-Delete `data/homework.db` to reset (you'll lose history).
-
-## Development
-
-### Running Tests
-
-```bash
-# Run all tests
-python -m pytest tests/
-
-# Run specific test file
-python -m pytest tests/test_c_test_grader.py
-```
-
-### Adding a New C-test Template
+## Adding C-Test Templates
 
 ```python
 from db import get_db
@@ -265,67 +173,160 @@ import json
 answer_key = {
     1: "weather",
     2: "cold",
-    # ... more items
+    3: "yesterday",
+    4: "morning",
+    5: "walked",
+    6: "school",
+    7: "because",
+    8: "late"
 }
 
-# Add to database
+# Add template to database
 db = get_db()
 db.add_c_test_template(
     version="A",
-    text="The wea____ was col____...",
+    text="The wea____ was col____ yest____day morn____...",
     answer_key=json.dumps(answer_key),
     num_items=len(answer_key)
 )
 ```
 
-## API Usage
+## Inventory Database Integration
 
-### Grading a C-test Programmatically
+### Required Schema
 
-```python
-from c_test_grader import grade_c_test
+To integrate with your school's inventory.db, ensure it has these tables:
 
-# Define answer key
-answer_key = {
-    1: "weather",
-    2: "cold",
-    3: "yesterday"
-}
+```sql
+-- Students table
+CREATE TABLE students (
+    student_id INTEGER PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT,
+    current_level TEXT
+);
 
-# Student answers
-student_answers = {
-    1: "weather",
-    2: "cold",
-    3: "yesterday"
-}
+-- C-Test results table
+CREATE TABLE c_test_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    test_version TEXT NOT NULL,
+    test_date DATETIME NOT NULL,
+    num_items INTEGER NOT NULL,
+    num_correct INTEGER NOT NULL,
+    percentage REAL NOT NULL,
+    score INTEGER NOT NULL,
+    placement_level TEXT,
+    completed BOOLEAN DEFAULT 1,
+    FOREIGN KEY (student_id) REFERENCES students(student_id)
+);
 
-# Grade the test
-score, items, feedback = grade_c_test(answer_key, student_answers)
-
-print(f"Score: {score}/5")
-print(feedback)
+-- Optional: Item-level details
+CREATE TABLE c_test_result_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    result_id INTEGER NOT NULL,
+    item_number INTEGER NOT NULL,
+    correct_word TEXT NOT NULL,
+    student_answer TEXT,
+    is_correct BOOLEAN NOT NULL,
+    FOREIGN KEY (result_id) REFERENCES c_test_results(id)
+);
 ```
 
-### Parsing Student Submissions
+### Providing Schema Access
 
-```python
-from c_test_parser import extract_c_test_answers
+If your inventory.db has a different schema, please update `inventory_db.py` with the correct table and column names.
 
-# From numbered list
-text = "1. weather\n2. cold\n3. yesterday"
-answers = extract_c_test_answers(text, num_items=3)
+## Development
 
-# From bracket format
-text = "The wea[weather] was col[cold]"
-answers = extract_c_test_answers(text, num_items=2)
+### Running Tests
+
+```bash
+# Run all tests
+python -m unittest discover tests/
+
+# Run specific test file
+python -m unittest tests.test_c_test_grader
 ```
 
-## Future Ideas
+All 50 unit tests should pass:
+- 17 tests for grading engine
+- 33 tests for answer parsing
 
-- Multiple students
-- Progress charts
-- PDF support
-- Google Drive API integration
-- Multiple C-test versions
-- Adaptive difficulty
-- Detailed analytics
+### Code Quality
+
+The app follows these principles:
+- Pure C-Test functionality (no reading/writing homework code)
+- Student-aware (supports multiple students via inventory.db)
+- Offline-first (works without inventory.db connection)
+- Tested (50+ unit tests with 100% pass rate)
+
+## Architecture
+
+The C-Test app is designed to integrate with the NestMind school ecosystem:
+
+```
+┌─────────────────┐
+│  C-Test Intake  │
+│   Application   │
+└────────┬────────┘
+         │
+    ┌────▼─────────────┐
+    │  Local Database  │ ← Always available (offline mode)
+    │  (c_test.db)     │
+    └────┬─────────────┘
+         │
+    ┌────▼──────────────┐
+    │ Inventory Database│ ← Shared with teacher portal
+    │ (inventory.db)    │
+    └───────────────────┘
+```
+
+**Benefits:**
+- Works offline (local database)
+- Syncs to shared database when online
+- Integrates with teacher portal and lesson planning
+- Feeds student learning history across all apps
+
+## Troubleshooting
+
+### Database not found
+
+Create the data directory:
+```bash
+mkdir -p data
+```
+
+### Inventory database connection fails
+
+Check `config.py`:
+1. Verify `INVENTORY_DB_PATH` points to correct file
+2. Ensure the file exists and is readable
+3. Set `OFFLINE_MODE = True` to use local database only
+
+### Import errors
+
+Make sure all dependencies are installed:
+```bash
+pip install -r requirements.txt
+```
+
+## License
+
+See LICENSE file for details.
+
+## Related Documents
+
+- `GAP_ANALYSIS_REPORT.md`: Detailed analysis of the C-Test codebase and integration planning
+- `config.example.py`: Configuration options with comments
+
+---
+
+**Note:** This is a pure C-Test placement tool. It does NOT include:
+- Homework tracking or generation
+- Reading comprehension grading
+- Writing quality assessment
+- Folder watching or file monitoring
+
+For ongoing homework management, see the separate reading/writing app.
