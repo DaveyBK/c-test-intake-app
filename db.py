@@ -1,7 +1,7 @@
 """
-SQLite database layer for 10-Minute Reading App (V1).
+SQLite database layer for C-Test Intake App.
 
-Simple schema for tracking homework submissions and scores.
+Local database for C-test results and templates.
 """
 
 import sqlite3
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Generator, Dict
 
 from config import DB_PATH
-from models import Homework, GeneratedHomework, CTestItem
+from models import CTestItem, CTestResult, Student
 
 
 # =============================================================================
@@ -19,48 +19,31 @@ from models import Homework, GeneratedHomework, CTestItem
 # =============================================================================
 
 SCHEMA = """
--- Homework submissions
-CREATE TABLE IF NOT EXISTS homeworks (
+-- C-test results (local storage)
+CREATE TABLE IF NOT EXISTS c_test_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hw_number INTEGER NOT NULL UNIQUE,
-    file_name TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    extracted_text TEXT,
-    status TEXT DEFAULT 'pending',
-    submitted_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    reading_score INTEGER,
-    writing_score INTEGER,
-    listening_score INTEGER,
-    comment TEXT
-);
-
--- Generated homework files
-CREATE TABLE IF NOT EXISTS generated_homeworks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hw_number INTEGER NOT NULL,
-    reading_file TEXT,
-    writing_file TEXT,
-    reading_text TEXT,
-    writing_prompts TEXT,
+    student_id INTEGER NOT NULL,
+    test_version TEXT NOT NULL,
+    test_date DATETIME NOT NULL,
+    num_items INTEGER NOT NULL,
+    num_correct INTEGER NOT NULL,
+    percentage REAL NOT NULL,
+    score INTEGER NOT NULL,
+    placement_level TEXT,
+    completed BOOLEAN DEFAULT 1,
+    synced_to_inventory BOOLEAN DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Track which files we've already processed
-CREATE TABLE IF NOT EXISTS processed_files (
-    file_path TEXT PRIMARY KEY,
-    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- C-test items for detailed grading
-CREATE TABLE IF NOT EXISTS c_test_items (
+-- C-test result items (item-level details)
+CREATE TABLE IF NOT EXISTS c_test_result_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    homework_id INTEGER NOT NULL,
+    result_id INTEGER NOT NULL,
     item_number INTEGER NOT NULL,
     correct_word TEXT NOT NULL,
     student_answer TEXT,
-    is_correct BOOLEAN,
-    FOREIGN KEY (homework_id) REFERENCES homeworks(id)
+    is_correct BOOLEAN NOT NULL,
+    FOREIGN KEY (result_id) REFERENCES c_test_results(id) ON DELETE CASCADE
 );
 
 -- C-test templates/versions
@@ -72,6 +55,16 @@ CREATE TABLE IF NOT EXISTS c_test_templates (
     num_items INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Students cache (local copy from inventory.db)
+CREATE TABLE IF NOT EXISTS students_cache (
+    id INTEGER PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT,
+    current_level TEXT,
+    last_synced DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -80,7 +73,7 @@ CREATE TABLE IF NOT EXISTS c_test_templates (
 # =============================================================================
 
 class Database:
-    """SQLite database manager."""
+    """SQLite database manager for C-Test app."""
     
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or DB_PATH
@@ -90,7 +83,7 @@ class Database:
         """Create tables if they don't exist."""
         with self._connect() as conn:
             conn.executescript(SCHEMA)
-        print(f"Database initialized at {self.db_path}")
+        print(f"C-Test database initialized at {self.db_path}")
     
     @contextmanager
     def _connect(self) -> Generator[sqlite3.Connection, None, None]:
@@ -113,151 +106,134 @@ class Database:
                 conn.close()
     
     # =========================================================================
-    # HOMEWORK OPERATIONS
+    # C-TEST RESULT OPERATIONS
     # =========================================================================
     
-    def add_homework(self, hw: Homework) -> int:
-        """Add a new homework. Returns the ID."""
+    def add_c_test_result(self, result: CTestResult) -> int:
+        """
+        Add a C-test result with items.
+        
+        Args:
+            result: CTestResult object
+            
+        Returns:
+            Result ID
+        """
         with self._connect() as conn:
-            # Serialize datetime to ISO format string for consistent handling
-            submitted_at_str = hw.submitted_at.isoformat() if hw.submitted_at else None
-
+            # Insert result
             cursor = conn.execute(
-                """INSERT INTO homeworks
-                   (hw_number, file_name, file_path, extracted_text, status,
-                    submitted_at, reading_score, writing_score, comment)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (hw.hw_number, hw.file_name, hw.file_path, hw.extracted_text,
-                 hw.status, submitted_at_str, hw.reading_score, hw.writing_score,
-                 hw.comment)
+                """INSERT INTO c_test_results
+                   (student_id, test_version, test_date, num_items, num_correct,
+                    percentage, score, placement_level, completed, synced_to_inventory)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (result.student_id, result.test_version, 
+                 result.test_date.isoformat() if result.test_date else None,
+                 result.num_items, result.num_correct, result.percentage,
+                 result.score, result.placement_level, result.completed,
+                 result.synced_to_inventory)
             )
-            return cursor.lastrowid
+            result_id = cursor.lastrowid
+            
+            # Insert items
+            for item in result.items:
+                conn.execute(
+                    """INSERT INTO c_test_result_items
+                       (result_id, item_number, correct_word, student_answer, is_correct)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (result_id, item.item_number, item.original_word,
+                     item.student_answer, item.is_correct)
+                )
+            
+            return result_id
     
-    def get_homework(self, hw_id: int) -> Optional[Homework]:
-        """Get a homework by ID."""
+    def get_c_test_result(self, result_id: int) -> Optional[CTestResult]:
+        """
+        Get a C-test result by ID.
+        
+        Args:
+            result_id: Result ID
+            
+        Returns:
+            CTestResult object or None
+        """
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM homeworks WHERE id = ?", (hw_id,)
+                "SELECT * FROM c_test_results WHERE id = ?", (result_id,)
             ).fetchone()
-            if row:
-                return self._row_to_homework(row)
-            return None
+            
+            if not row:
+                return None
+            
+            # Get items
+            item_rows = conn.execute(
+                """SELECT * FROM c_test_result_items 
+                   WHERE result_id = ? ORDER BY item_number""",
+                (result_id,)
+            ).fetchall()
+            
+            items = [
+                CTestItem(
+                    item_number=r["item_number"],
+                    original_word=r["correct_word"],
+                    fragment_shown="",
+                    student_answer=r["student_answer"] or "",
+                    is_correct=bool(r["is_correct"])
+                )
+                for r in item_rows
+            ]
+            
+            test_date = None
+            if row["test_date"]:
+                if isinstance(row["test_date"], str):
+                    test_date = datetime.fromisoformat(row["test_date"])
+                else:
+                    test_date = row["test_date"]
+            
+            return CTestResult(
+                id=row["id"],
+                student_id=row["student_id"],
+                test_version=row["test_version"],
+                test_date=test_date,
+                num_items=row["num_items"],
+                num_correct=row["num_correct"],
+                percentage=row["percentage"],
+                score=row["score"],
+                placement_level=row["placement_level"] or "",
+                items=items,
+                completed=bool(row["completed"]),
+                synced_to_inventory=bool(row["synced_to_inventory"])
+            )
     
-    def get_homework_by_number(self, hw_number: int) -> Optional[Homework]:
-        """Get a homework by homework number."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM homeworks WHERE hw_number = ?", (hw_number,)
-            ).fetchone()
-            if row:
-                return self._row_to_homework(row)
-            return None
-    
-    def get_all_homeworks(self) -> List[Homework]:
-        """Get all homeworks, newest first."""
+    def get_student_results(self, student_id: int) -> List[CTestResult]:
+        """
+        Get all C-test results for a student.
+        
+        Args:
+            student_id: Student ID
+            
+        Returns:
+            List of CTestResult objects
+        """
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM homeworks ORDER BY hw_number DESC"
+                """SELECT id FROM c_test_results 
+                   WHERE student_id = ? 
+                   ORDER BY test_date DESC""",
+                (student_id,)
             ).fetchall()
-            return [self._row_to_homework(row) for row in rows]
+            
+            return [self.get_c_test_result(row["id"]) for row in rows]
     
-    def update_homework(self, hw: Homework) -> None:
-        """Update an existing homework."""
+    def mark_result_synced(self, result_id: int) -> None:
+        """Mark a result as synced to inventory.db."""
         with self._connect() as conn:
             conn.execute(
-                """UPDATE homeworks SET
-                   status = ?, reading_score = ?, writing_score = ?,
-                   listening_score = ?, comment = ?
-                   WHERE id = ?""",
-                (hw.status, hw.reading_score, hw.writing_score,
-                 hw.listening_score, hw.comment, hw.id)
-            )
-    
-    def get_next_hw_number(self) -> int:
-        """Get the next homework number."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT MAX(hw_number) as max_num FROM homeworks"
-            ).fetchone()
-            max_num = row["max_num"] if row["max_num"] else 0
-            return max_num + 1
-
-    def delete_homework(self, hw_id: int) -> None:
-        """Delete a homework by ID."""
-        with self._connect() as conn:
-            conn.execute("DELETE FROM homeworks WHERE id = ?", (hw_id,))
-
-    def _row_to_homework(self, row: sqlite3.Row) -> Homework:
-        """Convert a database row to Homework object."""
-        # Deserialize datetime strings to datetime objects
-        submitted_at = None
-        if row["submitted_at"]:
-            if isinstance(row["submitted_at"], str):
-                submitted_at = datetime.fromisoformat(row["submitted_at"])
-            else:
-                submitted_at = row["submitted_at"]
-
-        created_at = None
-        if row["created_at"]:
-            if isinstance(row["created_at"], str):
-                created_at = datetime.fromisoformat(row["created_at"])
-            else:
-                created_at = row["created_at"]
-
-        return Homework(
-            id=row["id"],
-            hw_number=row["hw_number"],
-            file_name=row["file_name"],
-            file_path=row["file_path"],
-            extracted_text=row["extracted_text"] or "",
-            status=row["status"],
-            submitted_at=submitted_at,
-            created_at=created_at,
-            reading_score=row["reading_score"],
-            writing_score=row["writing_score"],
-            listening_score=row["listening_score"],
-            comment=row["comment"] or "",
-        )
-    
-    # =========================================================================
-    # PROCESSED FILES TRACKING
-    # =========================================================================
-    
-    def is_file_processed(self, file_path: str) -> bool:
-        """Check if a file has already been processed."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT 1 FROM processed_files WHERE file_path = ?",
-                (file_path,)
-            ).fetchone()
-            return row is not None
-    
-    def mark_file_processed(self, file_path: str) -> None:
-        """Mark a file as processed."""
-        with self._connect() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO processed_files (file_path) VALUES (?)",
-                (file_path,)
+                "UPDATE c_test_results SET synced_to_inventory = 1 WHERE id = ?",
+                (result_id,)
             )
     
     # =========================================================================
-    # GENERATED HOMEWORK OPERATIONS
-    # =========================================================================
-    
-    def add_generated_homework(self, gen: GeneratedHomework) -> int:
-        """Add a generated homework record. Returns the ID."""
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """INSERT INTO generated_homeworks
-                   (hw_number, reading_file, writing_file, reading_text, writing_prompts)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (gen.hw_number, gen.reading_file, gen.writing_file,
-                 gen.reading_text, gen.writing_prompts)
-            )
-            return cursor.lastrowid
-    
-    # =========================================================================
-    # C-TEST OPERATIONS
+    # C-TEST TEMPLATE OPERATIONS
     # =========================================================================
     
     def add_c_test_template(self, version: str, text: str, answer_key: str, num_items: int) -> int:
@@ -308,61 +284,63 @@ class Database:
                 }
             return None
     
-    def save_c_test_items(self, homework_id: int, items: List[CTestItem]) -> None:
-        """
-        Save C-test items for a homework.
-        
-        Args:
-            homework_id: The homework ID
-            items: List of CTestItem objects
-        """
-        with self._connect() as conn:
-            # Delete existing items for this homework
-            conn.execute(
-                "DELETE FROM c_test_items WHERE homework_id = ?",
-                (homework_id,)
-            )
-            
-            # Insert new items
-            for item in items:
-                conn.execute(
-                    """INSERT INTO c_test_items
-                       (homework_id, item_number, correct_word, student_answer, is_correct)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (homework_id, item.item_number, item.original_word,
-                     item.student_answer, item.is_correct)
-                )
-    
-    def get_c_test_items(self, homework_id: int) -> List[CTestItem]:
-        """
-        Get C-test items for a homework.
-        
-        Args:
-            homework_id: The homework ID
-        
-        Returns:
-            List of CTestItem objects
-        """
+    def list_c_test_templates(self) -> List[Dict]:
+        """List all available C-test templates."""
         with self._connect() as conn:
             rows = conn.execute(
-                """SELECT * FROM c_test_items
-                   WHERE homework_id = ?
-                   ORDER BY item_number""",
-                (homework_id,)
+                "SELECT version, num_items FROM c_test_templates ORDER BY version"
+            ).fetchall()
+            return [{"version": r["version"], "num_items": r["num_items"]} for r in rows]
+    
+    # =========================================================================
+    # STUDENT CACHE OPERATIONS
+    # =========================================================================
+    
+    def cache_student(self, student: Student) -> None:
+        """Cache a student from inventory.db."""
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO students_cache
+                   (id, first_name, last_name, email, current_level, last_synced)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (student.id, student.first_name, student.last_name,
+                 student.email, student.current_level, datetime.now().isoformat())
+            )
+    
+    def get_cached_student(self, student_id: int) -> Optional[Student]:
+        """Get a cached student."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM students_cache WHERE id = ?", (student_id,)
+            ).fetchone()
+            
+            if row:
+                return Student(
+                    id=row["id"],
+                    first_name=row["first_name"],
+                    last_name=row["last_name"],
+                    email=row["email"] or "",
+                    current_level=row["current_level"] or ""
+                )
+            return None
+    
+    def get_all_cached_students(self) -> List[Student]:
+        """Get all cached students."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM students_cache ORDER BY last_name, first_name"
             ).fetchall()
             
-            items = []
-            for row in rows:
-                item = CTestItem(
-                    item_number=row["item_number"],
-                    original_word=row["correct_word"],
-                    fragment_shown="",
-                    student_answer=row["student_answer"] or "",
-                    is_correct=bool(row["is_correct"])
+            return [
+                Student(
+                    id=r["id"],
+                    first_name=r["first_name"],
+                    last_name=r["last_name"],
+                    email=r["email"] or "",
+                    current_level=r["current_level"] or ""
                 )
-                items.append(item)
-            
-            return items
+                for r in rows
+            ]
 
 
 # =============================================================================

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-10-Minute Reading App (V1)
+C-Test Intake App
 
-Entry point for the application.
+Entry point for the C-Test placement and intake application.
 Run this file to start the GUI.
 
 Usage:
@@ -21,49 +21,59 @@ if str(app_dir) not in sys.path:
 def main():
     """Main entry point."""
     print("=" * 50)
-    print("10-Minute Reading App - V1")
+    print("C-Test Intake App")
     print("=" * 50)
     
     # Import here to catch any import errors clearly
     try:
-        from config import INBOX_FOLDER, GENERATED_FOLDER, STUDENT_NAME
-        print(f"Student: {STUDENT_NAME}")
-        print(f"Inbox folder: {INBOX_FOLDER}")
-        print(f"Generated folder: {GENERATED_FOLDER}")
+        from config import DB_PATH, INVENTORY_DB_PATH, OFFLINE_MODE
+        print(f"Local database: {DB_PATH}")
+        if INVENTORY_DB_PATH and not OFFLINE_MODE:
+            print(f"Inventory database: {INVENTORY_DB_PATH}")
+        else:
+            print("Mode: Offline (local database only)")
         print()
     except ImportError as e:
         print(f"Configuration error: {e}")
+        print("Please create config.py from config.example.py")
         sys.exit(1)
-    
-    # Check for python-docx
-    try:
-        import docx
-        print("✓ python-docx available")
-    except ImportError:
-        print("⚠ python-docx not installed - .docx files won't work")
-        print("  Install with: pip install python-docx")
-        print()
     
     # Initialize database
     try:
         from db import get_db
         db = get_db()
-        print("✓ Database initialized")
+        print("✓ Local database initialized")
     except Exception as e:
         print(f"Database error: {e}")
         sys.exit(1)
     
+    # Check inventory database connection
+    try:
+        from inventory_db import get_inventory_db
+        inventory = get_inventory_db()
+        if inventory.is_available():
+            print("✓ Inventory database connected")
+        else:
+            print("⚠ Inventory database not available (offline mode)")
+    except Exception as e:
+        print(f"⚠ Inventory database connection failed: {e}")
+    
     # Start GUI
     print()
-    print("Starting GUI...")
+    print("Starting C-Test administration interface...")
     print("-" * 50)
     
     try:
-        from gui import App
-        app = App()
-        app.run()
+        # TODO: Replace with C-Test GUI when ready
+        print("GUI not yet implemented - C-Test core is ready")
+        print("\nAvailable modules:")
+        print("  - c_test_grader: Grading engine")
+        print("  - c_test_parser: Answer parsing")
+        print("  - db: Local database")
+        print("  - inventory_db: Shared database integration")
+        print("\nTo use programmatically, see GAP_ANALYSIS_REPORT.md")
     except Exception as e:
-        print(f"GUI error: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
