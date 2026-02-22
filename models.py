@@ -1,7 +1,7 @@
 """
-Data models for C-test Intake App.
+Data models for C-Test Intake App.
 
-Dataclasses for homework submissions, scores, and C-test specific data.
+Dataclasses for C-test specific data and student information.
 """
 
 from dataclasses import dataclass, field
@@ -10,46 +10,27 @@ from typing import Optional, List
 
 
 @dataclass
-class Homework:
-    """A homework submission."""
-    id: Optional[int] = None
-    hw_number: int = 0
-    file_name: str = ""
-    file_path: str = ""
-    extracted_text: str = ""
-    status: str = "pending"  # pending, scored, confirmed
-    submitted_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+class Student:
+    """A student in the system (matches inventory.db schema)."""
+    student_id: str = ""  # TEXT primary key (e.g., '20231107')
+    first_name: str = ""
+    last_name: str = ""
+    level: str = ""  # e.g., 'SM4', 'Phonics 2'
+    status: str = "active"  # 'active' or 'archived'
+    qr_code: str = ""
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    archived_at: Optional[str] = None
     
-    # Scores (0-5 each)
-    reading_score: Optional[int] = None
-    writing_score: Optional[int] = None
-    listening_score: Optional[int] = None  # Manual entry
+    @property
+    def full_name(self) -> str:
+        """Get full name."""
+        return f"{self.first_name} {self.last_name}".strip()
     
-    # Teacher feedback
-    comment: str = ""
-    
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now()
-        if self.submitted_at is None:
-            self.submitted_at = datetime.now()
-
-
-@dataclass
-class GeneratedHomework:
-    """A generated homework assignment."""
-    id: Optional[int] = None
-    hw_number: int = 0
-    reading_file: str = ""
-    writing_file: str = ""
-    reading_text: str = ""
-    writing_prompts: str = ""
-    created_at: Optional[datetime] = None
-    
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now()
+    @property
+    def id(self) -> str:
+        """Alias for student_id for compatibility."""
+        return self.student_id
 
 
 @dataclass
@@ -63,11 +44,24 @@ class CTestItem:
 
 
 @dataclass
-class CTestSubmission:
-    """A complete C-test submission."""
-    homework_id: int
-    test_version: str
-    items: List[CTestItem]
-    num_correct: int
-    percentage: float
-    score: int
+class CTestResult:
+    """A complete C-test result for a student."""
+    id: Optional[int] = None
+    student_id: str = ""  # TEXT to match inventory.db schema
+    test_version: str = ""
+    test_date: Optional[datetime] = None
+    num_items: int = 0
+    num_correct: int = 0
+    percentage: float = 0.0
+    score: int = 0  # 0-5 scale
+    placement_level: str = ""
+    items: List[CTestItem] = field(default_factory=list)
+    completed: bool = True
+    synced_to_inventory: bool = False
+    created_at: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now()
+        if self.test_date is None:
+            self.test_date = datetime.now()

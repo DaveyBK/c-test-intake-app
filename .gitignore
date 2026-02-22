@@ -8,6 +8,7 @@ __pycache__/
 .venv/
 venv/
 env/
+ENV/
 
 # Local configuration
 config.py
@@ -35,7 +36,48 @@ build/
 *.exe
 *.dll
 *.so
+*.egg-info/
+.eggs/
+
+# Testing
+.tox/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.cover
+.hypothesis/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Linting
+.pylint.d/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
 
 # OS junk
 Thumbs.db
 .DS_Store
+*.bak
+
+# Archived old files
+*_old.py
+
+# Documentation builds
+docs/_build/
+site/
+
+# Security
+bandit-report.json
+safety-report.json

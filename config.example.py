@@ -1,30 +1,20 @@
-# Configuration for C-test Intake App
+# Configuration for C-Test Intake App
 # Copy this file to config.py and customize the values for your setup
 
-# Student Information
-STUDENT_NAME = "Student 1"  # Name of the student
-
-# Folder Paths (relative to project root)
-INBOX_FOLDER = "./inbox"        # Where student submits homework files
-GENERATED_FOLDER = "./generated"  # Where generated homework files are saved
-
-# Database
-DB_PATH = "./data/homework.db"  # SQLite database location
+# Database Paths
+DB_PATH = "./data/c_test.db"  # Local C-Test database
+INVENTORY_DB_PATH = None  # Path to shared inventory.db (set to actual path when available)
 
 # Scoring Configuration
 MIN_SCORE = 0  # Minimum possible score
 MAX_SCORE = 5  # Maximum possible score
 
-# File Watching
-POLL_INTERVAL = 5  # Seconds between folder checks
-SUPPORTED_EXTENSIONS = [".docx", ".txt"]  # Supported file formats
-
-# C-test Configuration
-C_TEST_ACCEPT_VARIANTS = True  # Accept British/American spelling
+# C-Test Configuration
+C_TEST_ACCEPT_VARIANTS = True  # Accept British/American spelling variants
 C_TEST_DEFAULT_VERSION = "A"   # Default test version
 C_TEST_PASSING_SCORE = 3       # Minimum passing score (0-5)
 
-# C-test Scoring Thresholds (percentage to score conversion)
+# C-Test Scoring Thresholds (percentage to score conversion)
 C_TEST_SCORE_THRESHOLDS = {
     5: 90,  # 90%+ = score 5
     4: 75,  # 75-89% = score 4
@@ -32,3 +22,17 @@ C_TEST_SCORE_THRESHOLDS = {
     2: 45,  # 45-59% = score 2
     1: 30,  # 30-44% = score 1
 }
+
+# Placement Level Mapping (score to level)
+PLACEMENT_LEVELS = {
+    0: "Beginner",
+    1: "Elementary",
+    2: "Pre-Intermediate",
+    3: "Intermediate",
+    4: "Upper-Intermediate",
+    5: "Advanced"
+}
+
+# Integration Settings
+OFFLINE_MODE = True  # If True, only uses local database
+AUTO_SYNC = False    # If True, automatically syncs to inventory.db when available
